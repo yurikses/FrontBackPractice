@@ -6,16 +6,30 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static("public"));
 
+app.use((req, res, next) => {
+  res.on('finish', () => { 
+    console.log(`[${new Date().toISOString()}] [${req.method}] ${res.statusCode} ${req.path}`);
+    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') { 
+      console.log('Body: ', req.body)
+    }
+  })
+  next();
+})
+
+
+
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal server error" });
+});
+
+
 const goods = [
   { id: 1, name: "Товар 1", price: 100 },
   { id: 2, name: "Товар 2", price: 200 },
   { id: 3, name: "Товар 3", price: 300 },
 ];
 
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.url}`);
-  next();
-});
 
 app.get("/", (req, res) => {
   res.send("Главная страница");
@@ -92,6 +106,12 @@ app.delete('/api/goods/:id', (req, res) => {
   goods.splice(goodIndex, 1);
   return res.json({"message": `Товар с id ${id} удален`});  
 });
+
+app.use((req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
