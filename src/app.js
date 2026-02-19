@@ -39,7 +39,7 @@ app.get('/api/goods/:id', (req, res) => {
 // Endpoint для добавления нового товара
 app.post('/api/goods', (req, res) => {
   const { name, cost } = req.body;
-  if (!name || !cost || typeof cost !== 'number') { 
+  if (!name || !cost || typeof cost != 'number') { 
     res.status(404).json({"message":"Неверные данные для добавления товара"});
   }
   
