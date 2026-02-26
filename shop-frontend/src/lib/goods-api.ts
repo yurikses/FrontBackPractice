@@ -10,6 +10,7 @@ export interface Good {
   category: string;
   desc: string;
   count: number;
+  imageUrl: string;
 }
 
 export interface CreateGoodPayload {
@@ -18,6 +19,7 @@ export interface CreateGoodPayload {
   category?: string;
   desc?: string;
   count?: number;
+  imageUrl?: string;
 }
 
 export interface UpdateGoodPayload {
@@ -26,6 +28,7 @@ export interface UpdateGoodPayload {
   category?: string;
   desc?: string;
   count?: number;
+  imageUrl?: string;
 }
 // Создаем ассинхронную функцию-темплейт на получение данных с помощью fetch. 
 async function request<T>(
@@ -75,7 +78,7 @@ export const GoodsApi = {
   create: (payload: CreateGoodPayload) =>
     http.post<Good>("/api/goods", payload),
   update: (id: number, payload: UpdateGoodPayload) =>
-    http.patch<{ message: string }>(`/api/goods/${id}`, payload),
+    http.patch<Good>(`/api/goods/${id}`, payload),
   remove: (id: number) =>
     http.delete<{ message: string }>(`/api/goods/${id}`)
 };

@@ -1,31 +1,22 @@
-import { useEffect, useState } from "react";
-import { GoodsApi } from "../lib/goods-api";
+
 import { Card } from "./card";
 import { type Good } from "../lib/goods-api";
+import { EditModal } from "./modal";
+import { useState } from "react";
 
-export function CardWrapper() {
-  const [goods, setGoods] = useState<Good[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-
-  useEffect(() => {
-    let mounted = true;
-
-    GoodsApi.list()
-      .then((data) => {
-        if (mounted) {
-          setGoods(data);
-          setError(null);
-        }
-      })
-      .catch((err) => mounted && setError(err.message || "Ошибка загрузки товаров"))
-      .finally(() => mounted && setLoading(false));
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+export function CardWrapper({ loading, error, goods, deleteGood, updateGood }: {
+  loading: boolean;
+  error: string | null;
+  goods: Good[];
+  deleteGood: (goodId: number) => void;
+  updateGood: (goodId: number, newData: Good) => void
+}) {
+  const [goodForEdit, setGoodForEdit] = useState<Good | null>(null)
+  const [editOpen, setEditOpen] = useState<boolean>(false)
+  const openEditModal = (good: Good) => {
+    setGoodForEdit(good)
+    setEditOpen(true)
+  }
   
   if (loading) {
     return <p>Загрузка товаров...</p>;
@@ -37,9 +28,9 @@ export function CardWrapper() {
   return (
     <div className="grid grid-cols-4 w-full gap-2 p-2">
       {goods.map((good) => (
-        <Card good={good} key={good.id}/>
+        <Card openChange={()=>openEditModal(good)} deleteGood={deleteGood} good={good} key={good.id} />
       ))}
+      <EditModal updateEditedGood={updateGood} close={()=>setEditOpen(false) } isOpen={ editOpen } prevPost={goodForEdit ? goodForEdit : null}></EditModal>
     </div>
   );
-  
 }
