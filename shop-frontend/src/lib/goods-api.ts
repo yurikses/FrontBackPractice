@@ -13,6 +13,12 @@ export interface Good {
   imageUrl: string;
 }
 
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
 export interface CreateGoodPayload {
   name: string;
   price: number;
@@ -73,12 +79,37 @@ const http = {
 
 // Готовый API для работы с товарами
 export const GoodsApi = {
+  me: () => http.get<User>("/api/me", {
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("authToken")}`
+    }
+  }),
+  register: (firstName: string, lastName: string, email: string, password: string) =>
+    http.post<{ message: string }>("/api/auth/register", { firstName, lastName, email, password }),
+  login: (email: string, password: string) =>
+    http.post<string>("/api/auth/login", { email, password }),
   list: () => http.get<Good[]>("/api/goods"),
-  one: (id: number) => http.get<Good>(`/api/goods/${id}`),
+  one: (id: number) => http.get<Good>(`/api/goods/${id}`, {
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("authToken")}`
+    }
+  }),
   create: (payload: CreateGoodPayload) =>
-    http.post<Good>("/api/goods", payload),
+    http.post<Good>("/api/goods", payload, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("authToken")}`
+      }
+    }),
   update: (id: number, payload: UpdateGoodPayload) =>
-    http.patch<Good>(`/api/goods/${id}`, payload),
+    http.patch<Good>(`/api/goods/${id}`, payload, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("authToken")}`
+      }
+    }),
   remove: (id: number) =>
-    http.delete<{ message: string }>(`/api/goods/${id}`)
+    http.delete<{ message: string }>(`/api/goods/${id}`, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("authToken")}`
+      }
+    })
 };
