@@ -176,7 +176,7 @@ app.get("/api/goods", (req, res) => {
 });
 
 // Endpoint для получения товара по ID
-app.get("/api/goods/:id", (req, res) => {
+app.get("/api/goods/:id", authMiddleware, (req, res) => {
   const id = parseInt(req.params.id);
   const good = goods.find((g) => g.id === id);
   if (good) {
@@ -186,7 +186,7 @@ app.get("/api/goods/:id", (req, res) => {
   }
 });
 // Endpoint для добавления нового товара
-app.post("/api/goods", (req, res) => {
+app.post("/api/goods", authMiddleware, (req, res) => {
   const { name, price, desc, count, category, imageUrl } = req.body;
   if (
     !name ||
@@ -214,7 +214,7 @@ app.post("/api/goods", (req, res) => {
   res.status(201).json(newGood);
 });
 // Endpoint для обновления товара по ID
-app.patch("/api/goods/:id", (req, res) => {
+app.patch("/api/goods/:id", authMiddleware, (req, res) => {
   const { name, price, desc, category, count, imageUrl } = req.body;
   const id = parseInt(req.params.id);
   if (!id) {
@@ -245,7 +245,7 @@ app.patch("/api/goods/:id", (req, res) => {
 });
 
 // Endpoint для удаления товара по ID
-app.delete("/api/goods/:id", (req, res) => {
+app.delete("/api/goods/:id", authMiddleware,  (req, res) => {
   const id = parseInt(req.params.id);
   if (!id) {
     return res.status(404).json({ message: "Укажите идентификатор товара" });
