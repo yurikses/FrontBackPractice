@@ -1,9 +1,20 @@
 const express = require("express");
 const cors = require("cors");
 const app = express();
-const { createHash, verifyHash } = require("./utils/authorization");
-const PORT = 3000;
+const {
+  createHash,
+  verifyHash,
+  createJWT,
+  verifyJWT,
+} = require("./utils/authorization");
 
+const { authMiddleware } = require("./middleware.js");
+
+require("dotenv").config();
+
+const ACCESS_TOKEN_SECRET = process.env.JWT_SECRET_KEY || "some_secret_code";
+const PORT = 3000;
+const TOKEN_EXPIRE_TIME = "15m";
 const users = [];
 
 const goods = [
@@ -135,8 +146,30 @@ app.post("/api/auth/login", async (req, res) => {
     return res.status(401).json({ message: "Неверный пароль" });
   }
 
-  res.status(200).json({ message: "Успешный вход", userId: user.id });
+  const token = createJWT(
+    { sub: user.id, username: user.first_name + " " + user.last_name },
+    ACCESS_TOKEN_SECRET,
+    {
+      expiresIn: TOKEN_EXPIRE_TIME,
+    },
+  );
+
+  res.status(200).json(token);
 });
+app.get("/api/auth/me", authMiddleware, (req, res) => {
+  const user = users.find((u) => u.id === req.user.sub);
+  if (!user) {
+    return res.status(404).json({ message: "Пользователь не найден" });
+  }
+  res
+    .status(200)
+    .json({
+      id: user.id,
+      email: user.email,
+      name: user.first_name + " " + user.last_name,
+    });
+});
+
 // Endpoint для получения всех товаров
 app.get("/api/goods", (req, res) => {
   res.json(goods);
