@@ -1,7 +1,72 @@
 const express = require("express");
 const cors = require("cors");
 const app = express();
+const { createHash, verifyHash } = require("./utils/authorization");
 const PORT = 3000;
+
+const users = [];
+
+const goods = [
+  {
+    id: 1,
+    name: "Ноутбук Acer Aspire 5",
+    price: 45000,
+    desc: "15.6″, Intel i5, 8GB RAM, 512GB SSD.",
+    count: 5,
+    category: "Электроника",
+    imageUrl:
+      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT6Mwygg4ny-FaMwKqO0s1GFwvhYLKREt1VjQ&s",
+  },
+  {
+    id: 2,
+    name: "Смартфон Samsung Galaxy A54",
+    price: 32000,
+    desc: "6.4″ AMOLED, 128GB, 50MP камера.",
+    count: 12,
+    category: "Электроника",
+    imageUrl:
+      "https://hi-stores.ru/upload/iblock/2f3/na4smhogfb3938sk8fqe34wnfe10d4uc.jpg",
+  },
+  {
+    id: 3,
+    name: "Наушники Sony WH-CH520",
+    price: 4500,
+    desc: "Bluetooth, до 50 часов работы.",
+    count: 20,
+    category: "Аксессуары",
+    imageUrl:
+      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQdGDgWqHSsJtg3fhDhF_bKMRR6OZVToT53Dw&s",
+  },
+  {
+    id: 4,
+    name: "Кофемашина DeLonghi EC 685",
+    price: 14000,
+    desc: "Рожковая, давление 15 бар.",
+    count: 4,
+    category: "Бытовая техника",
+    imageUrl: "https://neamazon.ru/d/20039515b.jpg",
+  },
+  {
+    id: 5,
+    name: "Игровая мышь Logitech G102",
+    price: 1800,
+    desc: "RGB, 8000 DPI, проводная.",
+    count: 25,
+    category: "Аксессуары",
+    imageUrl:
+      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSc28ZQ3E-cmIXHNhD237RwSRPxdJyrFS7f_Q&s",
+  },
+  {
+    id: 6,
+    name: "Книга «Чистый код»",
+    price: 900,
+    desc: "Роберт Мартин, мягкая обложка.",
+    count: 15,
+    category: "Книги",
+    imageUrl: "https://rezised-images.knhbt.cz/1920x1920/55129170.webp",
+  },
+];
+
 app.use(cors({ origin: "http://localhost:5173", credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -28,67 +93,50 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Internal server error" });
 });
 
-const goods = [
-  {
-    id: 1,
-    name: "Ноутбук Acer Aspire 5",
-    price: 45000,
-    desc: "15.6″, Intel i5, 8GB RAM, 512GB SSD.",
-    count: 5,
-    category: "Электроника",
-    imageUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT6Mwygg4ny-FaMwKqO0s1GFwvhYLKREt1VjQ&s",
-  },
-  {
-    id: 2,
-    name: "Смартфон Samsung Galaxy A54",
-    price: 32000,
-    desc: "6.4″ AMOLED, 128GB, 50MP камера.",
-    count: 12,
-    category: "Электроника",
-    imageUrl: "https://hi-stores.ru/upload/iblock/2f3/na4smhogfb3938sk8fqe34wnfe10d4uc.jpg",
-  },
-  {
-    id: 3,
-    name: "Наушники Sony WH-CH520",
-    price: 4500,
-    desc: "Bluetooth, до 50 часов работы.",
-    count: 20,
-    category: "Аксессуары",
-    imageUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQdGDgWqHSsJtg3fhDhF_bKMRR6OZVToT53Dw&s",
-  },
-  {
-    id: 4,
-    name: "Кофемашина DeLonghi EC 685",
-    price: 14000,
-    desc: "Рожковая, давление 15 бар.",
-    count: 4,
-    category: "Бытовая техника",
-    imageUrl: "https://neamazon.ru/d/20039515b.jpg",
-  },
-  {
-    id: 5,
-    name: "Игровая мышь Logitech G102",
-    price: 1800,
-    desc: "RGB, 8000 DPI, проводная.",
-    count: 25,
-    category: "Аксессуары",
-    imageUrl: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSc28ZQ3E-cmIXHNhD237RwSRPxdJyrFS7f_Q&s",
-  },
-  {
-    id: 6,
-    name: "Книга «Чистый код»",
-    price: 900,
-    desc: "Роберт Мартин, мягкая обложка.",
-    count: 15,
-    category: "Книги",
-    imageUrl: "https://rezised-images.knhbt.cz/1920x1920/55129170.webp",
-  },
-];
 // Endpoint для главной страницы
 app.get("/", (req, res) => {
   res.send("Главная страница");
 });
+app.post("/api/auth/register", async (req, res) => {
+  const { first_name, last_name, email, password } = req.body;
+  if (!first_name || !last_name || !email || !password) {
+    return res
+      .status(400)
+      .json({ message: "Необходимы имя пользователя, почта и пароль" });
+  }
 
+  const hashPassword = await createHash(password);
+
+  const newUser = {
+    id: users.length + 1,
+    last_name,
+    first_name,
+    email,
+    password: hashPassword,
+  };
+
+  users.push(newUser);
+  res.status(201).json(newUser);
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ message: "Необходимы почта и пароль" });
+  }
+
+  const user = users.find((u) => u.email === email);
+  if (!user) {
+    return res.status(404).json({ message: "Пользователь не найден" });
+  }
+
+  const isPasswordValid = await verifyHash(password, user.password);
+  if (!isPasswordValid) {
+    return res.status(401).json({ message: "Неверный пароль" });
+  }
+
+  res.status(200).json({ message: "Успешный вход", userId: user.id });
+});
 // Endpoint для получения всех товаров
 app.get("/api/goods", (req, res) => {
   res.json(goods);
