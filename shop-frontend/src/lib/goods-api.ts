@@ -1,7 +1,31 @@
-const API_URL =  "http://localhost:3000";
+import { auth } from "./auth";
 
+const API_URL = "http://localhost:3000";
 type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
+let isRefreshing = false;
+let refreshPromise: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = auth.getRefreshToken();
+  if (!refreshToken) return false;
+
+  try {
+    const res = await fetch(`${API_URL}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!res.ok) return false;
+
+    const data = await res.json();
+    auth.setTokens(data.accessToken, data.refreshToken);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface Good {
   id: number;
@@ -36,29 +60,70 @@ export interface UpdateGoodPayload {
   count?: number;
   imageUrl?: string;
 }
-// Создаем ассинхронную функцию-темплейт на получение данных с помощью fetch. 
+// Создаем ассинхронную функцию-темплейт на получение данных с помощью fetch.
 async function request<T>(
   method: HttpMethod,
   path: string,
   body?: unknown,
-  init?: RequestInit
 ): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    method,
-    headers: {
+  // Build request options
+  const buildOptions = (): RequestInit => {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    ...init
-  });
+    };
 
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `HTTP ${response.status}`);
+    const token = auth.getAccessToken();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    return {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    };
+  };
+
+  // First attempt
+  let response = await fetch(`${API_URL}${path}`, buildOptions());
+
+  // If 401 — try to refresh and retry ONCE
+  if (response.status === 401) {
+    console.log("Refreshing tokens...");
+    // Prevent multiple parallel refreshes
+    if (!isRefreshing) {
+      isRefreshing = true;
+      refreshPromise = refreshAccessToken().finally(() => {
+        isRefreshing = false;
+        refreshPromise = null;
+      });
+    }
+
+    const refreshed = await refreshPromise;
+
+    if (refreshed) {
+      // Retry original request with new token
+      response = await fetch(`${API_URL}${path}`, buildOptions());
+    } else {
+      // Refresh failed — force logout
+      auth.clear();
+      window.location.href = "/";
+      throw new Error("Session expired");
+    }
   }
 
-  // Если нет тела (например, DELETE 204), возвращаем undefined
+  if (!response.ok) {
+    const text = await response.text();
+    let message = `HTTP ${response.status}`;
+    try {
+      const json = JSON.parse(text);
+      message = json.message || message;
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(message);
+  }
+
   try {
     return (await response.json()) as T;
   } catch {
@@ -67,49 +132,37 @@ async function request<T>(
 }
 // Темплейт для удобства создания запросов к API
 const http = {
-  get: <T>(path: string, init?: RequestInit) =>
-    request<T>("GET", path, undefined, init),
-  post: <T>(path: string, body: unknown, init?: RequestInit) =>
-    request<T>("POST", path, body, init),
-  patch: <T>(path: string, body: unknown, init?: RequestInit) =>
-    request<T>("PATCH", path, body, init),
-  delete: <T>(path: string, init?: RequestInit) =>
-    request<T>("DELETE", path, undefined, init)
+  get: <T>(path: string) => request<T>("GET", path, undefined),
+  post: <T>(path: string, body: unknown) => request<T>("POST", path, body),
+  patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
+  delete: <T>(path: string) => request<T>("DELETE", path, undefined),
 };
 
 // Готовый API для работы с товарами
 export const GoodsApi = {
-  me: () => http.get<User>("/api/me", {
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem("authToken")}`
-    }
-  }),
-  register: (firstName: string, lastName: string, email: string, password: string) =>
-    http.post<{ message: string }>("/api/auth/register", { firstName, lastName, email, password }),
+  me: () => http.get<User>("/api/me"),
+  register: (
+    firstName: string,
+    lastName: string,
+    email: string,
+    password: string,
+  ) =>
+    http.post<{ message: string }>("/api/auth/register", {
+      firstName,
+      lastName,
+      email,
+      password,
+    }),
   login: (email: string, password: string) =>
-    http.post<string>("/api/auth/login", { email, password }),
+    http.post<{ access_token: string; refresh_token: string }>(
+      "/api/auth/login",
+      { email, password },
+    ),
   list: () => http.get<Good[]>("/api/goods"),
-  one: (id: number) => http.get<Good>(`/api/goods/${id}`, {
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem("authToken")}`
-    }
-  }),
+  one: (id: number) => http.get<Good>(`/api/goods/${id}`),
   create: (payload: CreateGoodPayload) =>
-    http.post<Good>("/api/goods", payload, {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("authToken")}`
-      }
-    }),
+    http.post<Good>("/api/goods", payload),
   update: (id: number, payload: UpdateGoodPayload) =>
-    http.patch<Good>(`/api/goods/${id}`, payload, {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("authToken")}`
-      }
-    }),
-  remove: (id: number) =>
-    http.delete<{ message: string }>(`/api/goods/${id}`, {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("authToken")}`
-      }
-    })
+    http.patch<Good>(`/api/goods/${id}`, payload),
+  remove: (id: number) => http.delete<{ message: string }>(`/api/goods/${id}`),
 };

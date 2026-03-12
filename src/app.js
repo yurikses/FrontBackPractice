@@ -6,6 +6,7 @@ const {
   verifyHash,
   createJWT,
   verifyJWT,
+  createToken,
 } = require("./utils/authorization");
 
 const { authMiddleware } = require("./middleware.js");
@@ -13,9 +14,12 @@ const { authMiddleware } = require("./middleware.js");
 require("dotenv").config();
 
 const ACCESS_TOKEN_SECRET = process.env.JWT_SECRET_KEY || "some_secret_code";
+const REFRESH_TOKEN_SECRET = "some_refresh_secret_code";
 const PORT = 3000;
-const TOKEN_EXPIRE_TIME = "15m";
+const TOKEN_EXPIRE_TIME = "10s";
+const REFRESH_EXPIRE_TIME = "10s";
 const users = [];
+const refreshTokens = new Set();
 
 const goods = [
   {
@@ -115,6 +119,9 @@ app.post("/api/auth/register", async (req, res) => {
       .status(400)
       .json({ message: "Необходимы имя пользователя, почта и пароль" });
   }
+  if(users.find((u) => u.email === email)) {
+    return res.status(400).json({ message: "Пользователь с таким email уже существует" });
+  }
 
   const hashPassword = await createHash(password);
 
@@ -147,27 +154,80 @@ app.post("/api/auth/login", async (req, res) => {
   }
 
   const token = createJWT(
-    { sub: user.id, username: user.first_name + " " + user.last_name },
+    {
+      sub: user.id,
+      username: user.first_name + " " + user.last_name,
+    },
     ACCESS_TOKEN_SECRET,
     {
       expiresIn: TOKEN_EXPIRE_TIME,
     },
   );
 
-  res.status(200).json(token);
+  const refresh_token = createJWT(
+    {
+      sub: user.id,
+      username: user.first_name + " " + user.last_name,
+    },
+    REFRESH_TOKEN_SECRET,
+    {
+      expiresIn: REFRESH_EXPIRE_TIME,
+    },
+  );
+  refreshTokens.add(refresh_token);
+  res.status(200).json({ access_token: token, refresh_token: refresh_token });
 });
+
+app.post("/api/auth/refresh", (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(400).json({ message: "Необходим токен" });
+  }
+  if (!refreshTokens.has(refreshToken)) {
+    return res.status(401).json({ message: "Неправильный токен" });
+  }
+
+  try {
+    const { payload, expired} = verifyJWT(refreshToken, REFRESH_TOKEN_SECRET);
+    console.log(payload, users);
+    const user = users.find((user) => user.id == payload.sub);
+    console.log(user);
+    if (!user) {
+      return res.status(401).json({ message: "Пользователь не найден" });
+    }
+
+    refreshTokens.delete(refreshToken);
+    const newAccessToken = createToken(
+      ACCESS_TOKEN_SECRET,
+      TOKEN_EXPIRE_TIME,
+      user,
+    );
+    const newRefreshToken = createToken(
+      REFRESH_TOKEN_SECRET,
+      REFRESH_EXPIRE_TIME,
+      user,
+    );
+    refreshTokens.add(newRefreshToken);
+    res.json({
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+    });
+  } catch (err) {
+    return res.status(401).json({ message: "Неправильный токен" });
+  }
+});
+
 app.get("/api/auth/me", authMiddleware, (req, res) => {
   const user = users.find((u) => u.id === req.user.sub);
   if (!user) {
     return res.status(404).json({ message: "Пользователь не найден" });
   }
-  res
-    .status(200)
-    .json({
-      id: user.id,
-      email: user.email,
-      name: user.first_name + " " + user.last_name,
-    });
+  res.status(200).json({
+    id: user.id,
+    email: user.email,
+    name: user.first_name + " " + user.last_name,
+  });
 });
 
 // Endpoint для получения всех товаров
@@ -245,7 +305,7 @@ app.patch("/api/goods/:id", authMiddleware, (req, res) => {
 });
 
 // Endpoint для удаления товара по ID
-app.delete("/api/goods/:id", authMiddleware,  (req, res) => {
+app.delete("/api/goods/:id", authMiddleware, (req, res) => {
   const id = parseInt(req.params.id);
   if (!id) {
     return res.status(404).json({ message: "Укажите идентификатор товара" });

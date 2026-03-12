@@ -18,19 +18,35 @@ const createJWT = (payload, secret, options) => {
 }
 
 const verifyJWT = (token, secret) => {
-  console.log(token, secret)
   try {
-    const decoded = jwt.verify(token, secret);
-    return decoded;
+    return { payload: jwt.verify(token, secret), expired: false };
   } catch (err) {
-    console.log(err);
-    return null;
+    if (err.name === 'TokenExpiredError') {
+      return { payload: null, expired: true };
+    }
+    return { payload: null, expired: false };
   }
 }
+
+const createToken = (secret, expire, user) => {
+  return createJWT(
+    {
+      sub: user.id,
+      username: user.first_name + " " + user.last_name,
+    },
+    secret,
+    {
+      expiresIn: expire,
+    },
+  )
+}
+
+
 
 module.exports = {
   createHash,
   verifyHash,
+  createToken,
   createJWT,
   verifyJWT,
 }
