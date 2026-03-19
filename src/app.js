@@ -9,16 +9,30 @@ const {
   createToken,
 } = require("./utils/authorization");
 
-const { authMiddleware } = require("./middleware.js");
+const { authMiddleware, rolesMiddleware } = require("./middleware.js");
+const { hash } = require("bcrypt");
 
 require("dotenv").config();
 
 const ACCESS_TOKEN_SECRET = process.env.JWT_SECRET_KEY || "some_secret_code";
 const REFRESH_TOKEN_SECRET = "some_refresh_secret_code";
 const PORT = 3000;
-const TOKEN_EXPIRE_TIME = "10s";
-const REFRESH_EXPIRE_TIME = "10s";
-const users = [];
+const TOKEN_EXPIRE_TIME = "10m";
+const REFRESH_EXPIRE_TIME = "30m";
+
+const users = [
+  {
+    id: 1,
+    first_name: "Иван",
+    last_name: "Иванов",
+    email: "test@gmail.com",
+    password: "$2a$10$b7GzSZ/VHZOr0dM5jdmyQOjx6tl77oPVHk.bwiRCP9VzXR2UtFMKC",
+    role: "admin",
+    isBlocked: false,
+  }
+];
+
+
 const refreshTokens = new Set();
 
 const goods = [
@@ -119,9 +133,6 @@ app.post("/api/auth/register", async (req, res) => {
       .status(400)
       .json({ message: "Необходимы имя пользователя, почта и пароль" });
   }
-  if(users.find((u) => u.email === email)) {
-    return res.status(400).json({ message: "Пользователь с таким email уже существует" });
-  }
 
   const hashPassword = await createHash(password);
 
@@ -131,10 +142,14 @@ app.post("/api/auth/register", async (req, res) => {
     first_name,
     email,
     password: hashPassword,
+    role: "user",
+    isBlocked: false,
   };
 
   users.push(newUser);
-  res.status(201).json(newUser);
+  // Не возвращаем пароль на фронт!
+  const { password: _, ...userWithoutPassword } = newUser;
+  res.status(201).json(userWithoutPassword);
 });
 
 app.post("/api/auth/login", async (req, res) => {
@@ -148,6 +163,10 @@ app.post("/api/auth/login", async (req, res) => {
     return res.status(404).json({ message: "Пользователь не найден" });
   }
 
+  if (user.isBlocked) {
+    return res.status(403).json({ message: "Ваш аккаунт заблокирован" });
+  }
+
   const isPasswordValid = await verifyHash(password, user.password);
   if (!isPasswordValid) {
     return res.status(401).json({ message: "Неверный пароль" });
@@ -157,6 +176,7 @@ app.post("/api/auth/login", async (req, res) => {
     {
       sub: user.id,
       username: user.first_name + " " + user.last_name,
+      role: user.role,
     },
     ACCESS_TOKEN_SECRET,
     {
@@ -189,7 +209,7 @@ app.post("/api/auth/refresh", (req, res) => {
   }
 
   try {
-    const { payload, expired} = verifyJWT(refreshToken, REFRESH_TOKEN_SECRET);
+    const { payload, expired } = verifyJWT(refreshToken, REFRESH_TOKEN_SECRET);
     console.log(payload, users);
     const user = users.find((user) => user.id == payload.sub);
     console.log(user);
@@ -217,107 +237,202 @@ app.post("/api/auth/refresh", (req, res) => {
     return res.status(401).json({ message: "Неправильный токен" });
   }
 });
+// ==========================================
+// AUTH ENDPOINTS (ПРОДОЛЖЕНИЕ)
+// ==========================================
 
+// GET /api/auth/me (Пользователь)
 app.get("/api/auth/me", authMiddleware, (req, res) => {
+  // req.user берется из токена. Найдем актуальную инфу в БД.
   const user = users.find((u) => u.id === req.user.sub);
-  if (!user) {
-    return res.status(404).json({ message: "Пользователь не найден" });
-  }
-  res.status(200).json({
-    id: user.id,
-    email: user.email,
-    name: user.first_name + " " + user.last_name,
-  });
+  if (!user) return res.status(404).json({ message: "Пользователь не найден" });
+
+  const { password, ...safeUser } = user;
+  res.status(200).json(safeUser);
 });
 
+// ==========================================
+// USERS ENDPOINTS (ТОЛЬКО ДЛЯ АДМИНИСТРАТОРА)
+// ==========================================
+
+// GET /api/users (Администратор)
+app.get(
+  "/api/users",
+  authMiddleware,
+  rolesMiddleware(["admin"]),
+  (req, res) => {
+    // Убираем пароли перед отправкой
+    const safeUsers = users.map(({ password, ...u }) => u);
+    res.status(200).json(safeUsers);
+  },
+);
+
+// GET /api/users/:id (Администратор)
+app.get(
+  "/api/users/:id",
+  authMiddleware,
+  rolesMiddleware(["admin"]),
+  (req, res) => {
+    const user = users.find((u) => u.id === parseInt(req.params.id));
+    if (!user)
+      return res.status(404).json({ message: "Пользователь не найден" });
+
+    const { password, ...safeUser } = user;
+    res.status(200).json(safeUser);
+  },
+);
+
+// PUT /api/users/:id (Администратор) - Обновление пользователя (вкл. роль)
+app.patch(
+  "/api/users/:id",
+  authMiddleware,
+  rolesMiddleware(["admin"]),
+  (req, res) => {
+    const { first_name, last_name, email, role } = req.body;
+    const user = users.find((u) => u.id === parseInt(req.params.id));
+
+    if (!user)
+      return res.status(404).json({ message: "Пользователь не найден" });
+
+    if (first_name) user.first_name = first_name;
+    if (last_name) user.last_name = last_name;
+    if (email) user.email = email;
+    if (role && ["user", "seller", "admin"].includes(role)) {
+      user.role = role;
+    }
+
+    const { password, ...safeUser } = user;
+    res.status(200).json(safeUser);
+  },
+);
+
+// DELETE /api/users/:id (Администратор) - Блокировка (Soft Delete)
+app.delete(
+  "/api/users/:id",
+  authMiddleware,
+  rolesMiddleware(["admin"]),
+  (req, res) => {
+    const user = users.find((u) => u.id === parseInt(req.params.id));
+    if (!user)
+      return res.status(404).json({ message: "Пользователь не найден" });
+
+    user.isBlocked = true;
+    res
+      .status(200)
+      .json({ message: `Пользователь ID ${user.id} заблокирован` });
+  },
+);
+
 // Endpoint для получения всех товаров
-app.get("/api/goods", (req, res) => {
+app.get("/api/goods", authMiddleware, (req, res) => {
   res.json(goods);
 });
 
 // Endpoint для получения товара по ID
-app.get("/api/goods/:id", authMiddleware, (req, res) => {
-  const id = parseInt(req.params.id);
-  const good = goods.find((g) => g.id === id);
-  if (good) {
-    res.status(200).json(good);
-  } else {
-    res.status(404).json({ message: "Товар не найден" });
-  }
-});
+app.get(
+  "/api/goods/:id",
+  authMiddleware,
+  rolesMiddleware(["user", "seller", "admin"]),
+  (req, res) => {
+    const id = parseInt(req.params.id);
+    const good = goods.find((g) => g.id === id);
+    if (good) {
+      res.status(200).json(good);
+    } else {
+      res.status(404).json({ message: "Товар не найден" });
+    }
+  },
+);
 // Endpoint для добавления нового товара
-app.post("/api/goods", authMiddleware, (req, res) => {
-  const { name, price, desc, count, category, imageUrl } = req.body;
-  if (
-    !name ||
-    !price ||
-    !count ||
-    !category ||
-    !desc ||
-    typeof price !== "number" ||
-    typeof count !== "number"
-  ) {
-    res.status(404).json({ message: "Неверные данные для добавления товара" });
-  }
-
-  const newGood = {
-    id: goods.length + 1,
-    name,
-    price,
-    desc,
-    count,
-    category,
-    imageUrl: imageUrl || "https://placehold.co/300x150",
-  };
-
-  goods.push(newGood);
-  res.status(201).json(newGood);
-});
-// Endpoint для обновления товара по ID
-app.patch("/api/goods/:id", authMiddleware, (req, res) => {
-  const { name, price, desc, category, count, imageUrl } = req.body;
-  const id = parseInt(req.params.id);
-  if (!id) {
-    return res.status(404).json({ message: "Укажите идентификатор товара" });
-  }
-  const good = goods.find((g) => g.id === id);
-  if (!good) {
-    return res.status(404).json({ message: "Товар не найден" });
-  }
-
-  if (name || price) {
-    if (price && typeof price !== "number") {
-      return res.status(404).json({ message: "Цена должна быть числом" });
+app.post(
+  "/api/goods",
+  authMiddleware,
+  rolesMiddleware(["seller", "admin"]),
+  (req, res) => {
+    const { name, price, desc, count, category, imageUrl } = req.body;
+    if (
+      !name ||
+      !price ||
+      !count ||
+      !category ||
+      !desc ||
+      typeof price !== "number" ||
+      typeof count !== "number"
+    ) {
+      res
+        .status(404)
+        .json({ message: "Неверные данные для добавления товара" });
     }
 
-    good.name = name || good.name;
-    good.price = typeof price == "number" ? price : good.price;
-    good.desc = desc || good.desc;
-    good.category = category || good.category;
-    good.count = count || good.count;
-    good.imageUrl = imageUrl || good.imageUrl;
-    goods[goods.findIndex((g) => g.id === id)] = good;
-    return res.status(201).json(good);
-  }
-  return res
-    .status(404)
-    .json({ message: "Неверные данные для обновления товара" });
-});
+    const newGood = {
+      id: goods.length + 1,
+      name,
+      price,
+      desc,
+      count,
+      category,
+      imageUrl: imageUrl || "https://placehold.co/300x150",
+    };
+
+    goods.push(newGood);
+    res.status(201).json(newGood);
+  },
+);
+// Endpoint для обновления товара по ID
+app.patch(
+  "/api/goods/:id",
+  authMiddleware,
+  rolesMiddleware(["seller", "admin"]),
+  (req, res) => {
+    const { name, price, desc, category, count, imageUrl } = req.body;
+    const id = parseInt(req.params.id);
+    if (!id) {
+      return res.status(404).json({ message: "Укажите идентификатор товара" });
+    }
+    const good = goods.find((g) => g.id === id);
+    if (!good) {
+      return res.status(404).json({ message: "Товар не найден" });
+    }
+
+    if (name || price) {
+      if (price && typeof price !== "number") {
+        return res.status(404).json({ message: "Цена должна быть числом" });
+      }
+
+      good.name = name || good.name;
+      good.price = typeof price == "number" ? price : good.price;
+      good.desc = desc || good.desc;
+      good.category = category || good.category;
+      good.count = count || good.count;
+      good.imageUrl = imageUrl || good.imageUrl;
+      goods[goods.findIndex((g) => g.id === id)] = good;
+      return res.status(201).json(good);
+    }
+    return res
+      .status(404)
+      .json({ message: "Неверные данные для обновления товара" });
+  },
+);
 
 // Endpoint для удаления товара по ID
-app.delete("/api/goods/:id", authMiddleware, (req, res) => {
-  const id = parseInt(req.params.id);
-  if (!id) {
-    return res.status(404).json({ message: "Укажите идентификатор товара" });
-  }
-  const goodIndex = goods.findIndex((g) => g.id === id);
-  if (goodIndex === -1) {
-    return res.status(404).json({ message: "Товар не найден" });
-  }
+app.delete(
+  "/api/goods/:id",
+  authMiddleware,
+  rolesMiddleware(["admin"]),
+  (req, res) => {
+    const id = parseInt(req.params.id);
+    if (!id) {
+      return res.status(404).json({ message: "Укажите идентификатор товара" });
+    }
+    const goodIndex = goods.findIndex((g) => g.id === id);
+    if (goodIndex === -1) {
+      return res.status(404).json({ message: "Товар не найден" });
+    }
 
-  goods.splice(goodIndex, 1);
-  return res.json({ message: `Товар с id ${id} удален` });
-});
+    goods.splice(goodIndex, 1);
+    return res.json({ message: `Товар с id ${id} удален` });
+  },
+);
 
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });

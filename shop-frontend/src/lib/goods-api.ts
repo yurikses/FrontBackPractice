@@ -39,8 +39,11 @@ export interface Good {
 
 export interface User {
   id: number;
-  name: string;
+  first_name: string;
+  last_name: string;
   email: string;
+  role: "user" | "seller" | "admin";
+  isBlocked?: boolean;
 }
 
 export interface CreateGoodPayload {
@@ -88,7 +91,11 @@ async function request<T>(
   let response = await fetch(`${API_URL}${path}`, buildOptions());
 
   // If 401 — try to refresh and retry ONCE
-  if (response.status === 401) {
+  if (
+    response.status === 401 &&
+    !path.includes("/api/auth/login") &&
+    !path.includes("/api/auth/register")
+  ) {
     console.log("Refreshing tokens...");
     // Prevent multiple parallel refreshes
     if (!isRefreshing) {
@@ -107,7 +114,6 @@ async function request<T>(
     } else {
       // Refresh failed — force logout
       auth.clear();
-      window.location.href = "/";
       throw new Error("Session expired");
     }
   }
@@ -140,16 +146,16 @@ const http = {
 
 // Готовый API для работы с товарами
 export const GoodsApi = {
-  me: () => http.get<User>("/api/me"),
+  me: () => http.get<User>("/api/auth/me"),
   register: (
-    firstName: string,
-    lastName: string,
+    first_name: string,
+    last_name: string,
     email: string,
     password: string,
   ) =>
     http.post<{ message: string }>("/api/auth/register", {
-      firstName,
-      lastName,
+      first_name,
+      last_name,
       email,
       password,
     }),
@@ -165,4 +171,13 @@ export const GoodsApi = {
   update: (id: number, payload: UpdateGoodPayload) =>
     http.patch<Good>(`/api/goods/${id}`, payload),
   remove: (id: number) => http.delete<{ message: string }>(`/api/goods/${id}`),
+};
+
+// API для работы с пользователями (для администратора)
+export const UsersApi = {
+  list: () => http.get<User[]>("/api/users"),
+  one: (id: number) => http.get<User>(`/api/users/${id}`),
+  update: (id: number, payload: Partial<User> & { role?: string }) =>
+    http.patch<User>(`/api/users/${id}`, payload), 
+  block: (id: number) => http.delete<{ message: string }>(`/api/users/${id}`),
 };
