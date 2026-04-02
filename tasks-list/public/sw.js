@@ -26,6 +26,48 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+self.addEventListener('push', (event) => {
+  console.log('[Service Worker] Получен push-сигнал');
+  
+  let data = { title: 'Новая задача', body: 'Список обновлен' };
+  
+  // Пытаемся распарсить данные, если сервер их передал
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      // Если сервер передал просто строку, а не JSON
+      data.body = event.data.text();
+    }
+  }
+
+  const options = {
+    body: data.body,
+    icon: '/icons/favicon-128x128.png', // Убедись, что иконка реально существует
+    badge: '/icons/favicon-48x48.png',
+    vibrate: [100, 50, 100], // Вибрация на телефонах
+    data: {
+      dateOfArrival: Date.now(),
+      primaryKey: '2'
+    }
+  };
+
+  // Показываем системное уведомление
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
+});
+
+// Слушатель клика по уведомлению
+self.addEventListener('notificationclick', (event) => {
+  console.log('[Service Worker] Клик по уведомлению');
+  event.notification.close(); // Закрываем окошко
+  // Можно открыть окно браузера с сайтом
+  event.waitUntil(
+    clients.openWindow('/')
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const requestUrl = new URL(event.request.url);
 
