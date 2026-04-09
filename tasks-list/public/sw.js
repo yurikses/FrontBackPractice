@@ -26,11 +26,11 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-self.addEventListener('push', (event) => {
-  console.log('[Service Worker] Получен push-сигнал');
-  
-  let data = { title: 'Новая задача', body: 'Список обновлен' };
-  
+self.addEventListener("push", (event) => {
+  console.log("[Service Worker] Получен push-сигнал");
+
+  let data = { title: "Новая задача", body: "Список обновлен" };
+
   // Пытаемся распарсить данные, если сервер их передал
   if (event.data) {
     try {
@@ -43,29 +43,54 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: '/icons/favicon-128x128.png', // Убедись, что иконка реально существует
-    badge: '/icons/favicon-48x48.png',
+    icon: "/icons/favicon-128x128.png", // Убедись, что иконка реально существует
+    badge: "/icons/favicon-48x48.png",
     vibrate: [100, 50, 100], // Вибрация на телефонах
     data: {
       dateOfArrival: Date.now(),
-      primaryKey: '2'
-    }
+      primaryKey: "2",
+      taskId: data.taskId,
+      body: data.body,
+    },
+    actions: [
+      {
+        action: "snooze",
+        title: "Отложить на 5 минут",
+      },
+    ],
   };
 
   // Показываем системное уведомление
-  event.waitUntil(
-    self.registration.showNotification(data.title, options)
-  );
+  event.waitUntil(self.registration.showNotification(data.title, options));
 });
 
 // Слушатель клика по уведомлению
-self.addEventListener('notificationclick', (event) => {
-  console.log('[Service Worker] Клик по уведомлению');
+self.addEventListener("notificationclick", (event) => {
+  console.log("[Service Worker] Клик по уведомлению", event.action);
   event.notification.close(); // Закрываем окошко
-  // Можно открыть окно браузера с сайтом
-  event.waitUntil(
-    clients.openWindow('/')
-  );
+
+  if (event.action === "snooze") {
+    // Пользователь нажал "Отложить на 5 минут"
+    event.waitUntil(
+      self.registration.pushManager.getSubscription().then((subscription) => {
+        if (!subscription) return;
+        return fetch("http://localhost:3001/snooze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            endpoint: subscription.endpoint,
+            task: {
+              taskId: event.notification.data.taskId,
+              body: event.notification.data.body,
+            },
+          }),
+        });
+      }),
+    );
+  } else {
+    // Можно открыть окно браузера с сайтом
+    event.waitUntil(clients.openWindow("/"));
+  }
 });
 
 self.addEventListener("fetch", (event) => {

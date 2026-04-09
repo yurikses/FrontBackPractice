@@ -18,12 +18,15 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 function App() {
-  const [tasks, setTask] = useState<{ id: string; value: string }[]>(() =>
-    JSON.parse(localStorage.getItem("task-list") || "[]"),
-  );
+  const [tasks, setTask] = useState<
+    { id: string; value: string; reminder?: number }[]
+  >(() => JSON.parse(localStorage.getItem("task-list") || "[]"));
+
   const [isPushEnabled, setIsPushEnabled] = useState(false);
   const [pushMessage, setPushMessage] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+
+  const inputValueRef = useRef<HTMLInputElement>(null);
+  const inputDateRef = useRef<HTMLInputElement>(null);
   const timeoutRef = useRef(0);
 
   useEffect(() => {
@@ -31,13 +34,17 @@ function App() {
   }, [tasks]);
 
   useEffect(() => {
-    const onTaskAdded = (task: { text: string; timestamp: number }) => {
+    const onTaskAdded = (task: { text: string; reminder?: number }) => {
       if (isPushEnabled) {
         setPushMessage(true);
       }
       setTask((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), value: task.text },
+        {
+          id: crypto.randomUUID(),
+          value: task.text,
+          reminder: task.reminder,
+        },
       ]);
       console.log("Получена задача с сервера:", task);
     };
@@ -143,10 +150,14 @@ function App() {
     setTask((prev) => prev.filter((t) => t.id !== id));
 
   const addTask = () => {
-    const value = inputRef.current?.value.trim();
+    const value = inputValueRef.current?.value.trim();
+    const dateValue = inputDateRef.current?.value;
+    const reminder = dateValue ? new Date(dateValue).getTime() : undefined;
+
     if (value && value.length > 3) {
-      socket?.emit("newTask", { text: value, timestamp: Date.now() });
-      inputRef.current!.value = "";
+      socket?.emit("newTask", { text: value, reminder });
+      if (inputValueRef.current) inputValueRef.current.value = "";
+      if (inputDateRef.current) inputDateRef.current.value = "";
     }
   };
 
@@ -162,9 +173,16 @@ function App() {
       )}
       <div className="flex items-center gap-2">
         <input
-          ref={inputRef}
+          ref={inputValueRef}
           type="text"
-          className="border border-neutral-600 rounded-2xl px-3"
+          placeholder="Название задачи"
+          className="border border-neutral-600 rounded-md p-1"
+        />
+        <input
+          ref={inputDateRef}
+          className="border border-neutral-600 rounded-md p-1"
+          type="datetime-local"
+          name="push-date"
         />
         <button
           className="bg-sky-600 rounded-md px-3 text-white"
@@ -175,18 +193,21 @@ function App() {
       </div>
 
       <button
-        className={`px-3 py-1 rounded hover:opacity-75 text-white ${isPushEnabled ? "bg-red-500" : "bg-green-500"}`}
+        className={`px-3 py-1 rounded-md hover:opacity-75 text-white ${isPushEnabled ? "bg-red-500" : "bg-green-500"}`}
         onClick={isPushEnabled ? unsubscribeFromPush : subscribeToPush}
       >
         {isPushEnabled ? "Отключить уведомления" : "Включить уведомления"}
       </button>
-
       {tasks.length > 0 ? (
         <div className="flex flex-col gap-2">
           {tasks.map((task) => (
             <Task
               key={task.id}
-              task={task.value}
+              task={
+                task.reminder
+                  ? `${task.value} (Напоминание: ${new Date(task.reminder).toLocaleString()})`
+                  : task.value
+              }
               onDelete={() => deleteTask(task.id)}
             />
           ))}
