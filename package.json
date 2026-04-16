@@ -1,0 +1,26 @@
+{
+  "name": "frontbackpractice",
+  "version": "1.0.0",
+  "description": "Практические задания разделены по веткам репозитория.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yurikses/FrontBackPractice.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/yurikses/FrontBackPractice/issues"
+  },
+  "homepage": "https://github.com/yurikses/FrontBackPractice#readme",
+  "dependencies": {
+    "express": "^5.2.1",
+    "mongoose": "^9.4.1",
+    "pg": "^8.20.0",
+    "sequelize": "^6.37.8"
+  }
+}
