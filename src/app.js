@@ -16,7 +16,7 @@ const { hash } = require("bcrypt");
 
 require("dotenv").config();
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 // auth token secret keys and expiration times
 const ACCESS_TOKEN_SECRET = process.env.JWT_SECRET_KEY || "some_secret_code";
 const REFRESH_TOKEN_SECRET = "some_refresh_secret_code";
@@ -101,7 +101,7 @@ const goods = [
 ];
 
 const redisClient = createClient({
-  url: "redis://127.0.0.1:6379",
+  url: process.env.REDIS_URL || "redis://127.0.0.1:6379",
 });
 
 redisClient.on("error", (err) => console.error("Redis Client Error", err));
@@ -524,7 +524,7 @@ app.use((req, res) => {
 });
 
 initRedis().then(() => {
-  app.listen(PORT, () => {
+  app.listen(PORT, "0.0.0.0", () => {
     console.log(`Сервер запущен на http://localhost:${PORT}`);
   });
 });

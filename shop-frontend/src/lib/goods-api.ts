@@ -1,6 +1,6 @@
 import { auth } from "./auth";
 
-const API_URL = "http://frontend:3000";
+const API_URL = "http://localhost:80";
 type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
 let isRefreshing = false;
