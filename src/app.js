@@ -193,7 +193,7 @@ app.use((err, req, res, next) => {
 
 // Endpoint для главной страницы
 app.get("/", (req, res) => {
-  res.send("Главная страница");
+  res.json({ server: process.env.SERVER_ID || "backend-unknown" });
 });
 app.post("/api/auth/register", async (req, res) => {
   const { first_name, last_name, email, password } = req.body;
@@ -403,7 +403,7 @@ app.get(
   cacheMiddleware(() => "goods:all", PRODUCTS_CACHE_TTL),
   async (req, res) => {
     await saveToCache(req.cacheKey, goods, req.cacheTTL);
-    res.json({source: "server", data:goods });
+    res.json({ source: "server", data: goods });
   },
 );
 
@@ -488,9 +488,9 @@ app.patch(
       good.count = count || good.count;
       good.imageUrl = imageUrl || good.imageUrl;
       goods[goods.findIndex((g) => g.id === id)] = good;
-      
+
       await invalidateGoodsCache(id);
-    
+
       return res.status(201).json(good);
     }
     return res
